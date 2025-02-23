@@ -1,455 +1,332 @@
-# Esperanto-Kanji-Converter-and-Ruby-Annotation-Tool-Beta
+# Esperanto-Kanji-Converter-and-Ruby-Annotation-Tool-English
 
-以下の説明書は、本アプリのソースコード(main.py / エスペラント文(漢字)置換用のJSONファイル生成ページ.py / esp_text_replacement_module.py / esp_replacement_json_make_module.py)を「**どのように作動し、どんなデータの流れになっているのか**」を中心に、かなり踏み込んだ観点でまとめたものです。  
-「GUI的な操作方法はある程度わかる」という前提で、内部で行われるテキスト置換フローや、JSON生成ロジック、モジュール同士の呼び出し順序などを解説していきます。  
+Below is an **in-depth technical guide** intended for **intermediate-level Python/Streamlit developers** who already have a basic idea of the GUI usage but want a **deep dive** into how the codebase itself works. We will explore the **core architecture**, **data flow**, **module interactions**, and the **logic** behind the app’s functionality. This guide covers:
 
----
-
-# 目次
-
-1. **全体アーキテクチャ概要**  
-   1.1 アプリにおける「メインページ」(main.py) と「補助ページ」(エスペラント文(漢字)置換用のJSONファイル生成ページ.py)  
-   1.2 文字列(漢字)置換モジュール (esp_text_replacement_module.py)  
-   1.3 JSONファイル生成モジュール (esp_replacement_json_make_module.py)  
-
-2. **メインページ: main.py の仕組み**  
-   2.1 JSONファイル読み込みロジック  
-   2.2 placeholders (占位符) の読み込み  
-   2.3 並列処理の設定と注意点 (multiprocessing / spawn start method)  
-   2.4 入力テキストの取得 (手動入力 or ファイルアップロード)  
-   2.5 文字列(漢字)置換の実行フロー  
-   2.6 出力形式(HTML/括弧形式/単純置換等)の反映  
-   2.7 ダウンロードおよび最終表示  
-
-3. **補助ページ: エスペラント文(漢字)置換用のJSONファイル生成ページ.py の仕組み** (JSONファイルを自分で作成したい場合)  
-   3.1 CSVファイルやユーザー定義JSONファイルの取り扱い  
-   3.2 置換用JSONファイル「3種類のリスト」(全域用 / 局所用 / 二文字語根用) を生成するまでの流れ  
-   3.3 動詞・名詞語尾の追加など細かい語尾展開ロジック  
-   3.4 大量データをどうやって合成し、優先順位(文字数×10000)を付けているか  
-
-4. **esp_text_replacement_module.py (文字列置換モジュール) の詳細**  
-   4.1 エスペラント文字表記 (ĉ → cx 等) 関連の変換関数たち  
-   4.2 大域置換 / 局所置換 / skip置換(“%...%”) / placeholders の仕組み  
-   4.3 orchestrate_comprehensive_esperanto_text_replacement() で行われる処理手順  
-   4.4 multiprocessing の parallel_process()  
-
-5. **esp_replacement_json_make_module.py (JSON生成のためのモジュール) の詳細**  
-   5.1 CSVデータの読み込みと safe_replace() の組み合わせ  
-   5.2 output_format() によるルビ付与・漢字置換のバリエーション  
-   5.3 parallel_build_pre_replacements_dict() の並列化 (JSON作成時の最適化)  
-   5.4 remove_redundant_ruby_if_identical() (重複ルビ除去のトリック)  
-
-6. **補足ポイント**  
-   6.1 文字数を元にした「置換優先度」の設計意図  
-   6.2 Streamlit特有の注意点 (セッションステート, レイアウト, @st.cache_data, etc.)  
-   6.3 大規模辞書(50MB級のJSON)を扱うときのパフォーマンス戦略  
+1. **Overall App Structure**  
+2. **`main.py`: The Primary Streamlit Application**  
+3. **`JSON File Generation Page for Esperanto Text (Kanji) Replacement.py`: The Secondary (Pages) Module**  
+4. **`esp_text_replacement_module.py`: Replacement Logic & Multiprocessing**  
+5. **`esp_replacement_json_make_module.py`: JSON-Building & Word-Stemming Logic**  
+6. **Key Techniques & Considerations** (e.g., placeholders, morphological expansions, concurrency)
 
 ---
 
+## 1. Overall App Structure
 
-## 1. 全体アーキテクチャ概要
+The repository comprises four main Python files that form a Streamlit application. Two of these (`main.py` and `JSON File Generation Page for Esperanto Text (Kanji) Replacement.py`) are **entry points** as Streamlit pages, while the other two (`esp_text_replacement_module.py` and `esp_replacement_json_make_module.py`) provide **shared modules** of logic. Here’s the top-level overview:
 
-### 1.1 アプリにおける「メインページ」(main.py) と「補助ページ」(エスペラント文(漢字)置換用のJSONファイル生成ページ.py)
+- **`main.py`**  
+  This is the **primary** Streamlit script. It handles:
+  - UI for users to upload or select a JSON file containing replacement rules.
+  - Text input (manual or file-upload).
+  - Calls to the replacement logic (in the imported modules) to process that text (i.e., apply the Kanji or ruby transformations).
+  - Parallel processing setup (using Python’s `multiprocessing` with a custom “spawn” method).
+  - Display and download of the final replaced text.
 
-- **メインページ (main.py)**  
-  アプリを起動したときに表示されるメイン画面です。  
-  置換に使う「JSONファイル」をロードし、ユーザーが入力したエスペラント文(手動orファイル経由)に対して「文字列(漢字)置換」を実行し、最終的なテキストをダウンロードできるようにする機能を担います。
+- **`JSON File Generation Page for Esperanto Text (Kanji) Replacement.py`**  
+  A separate Streamlit “page” that:
+  - Allows advanced users to **generate** or **customize** the large replacement JSON itself.
+  - Merges data from user-provided CSV and JSON to produce a combined set of rules.
+  - Outputs a JSON with three main arrays (for global replacements, local-only replacements, and 2-char root expansions).
 
-- **補助ページ (エスペラント文(漢字)置換用のJSONファイル生成ページ.py)**  
-  Streamlit には `pages/`フォルダに配置したスクリプトを「サブページ」として扱える仕組みがあります。  
-  このサブページでは、「エスペラント→漢字/訳語」の対応関係を納めた CSV や、「ユーザー定義の語根分解ルール/置換後文字列」を納めた JSONファイルを使い、最終的に**巨大な置換用JSON(合并3个JSON文件)** を作るためのツールを提供しています。  
-  すなわち「(エスペラント文(漢字)置換用のJSONファイル生成ページ.py)で自前の置換JSONファイルを作り、それを (main.py) に読み込ませて文章変換する」という流れを想定しています。
+- **`esp_text_replacement_module.py`**  
+  A **utility** module that provides:
+  - Esperanto character transformations (e.g., from `cx` → `ĉ`, or from `c^` → `ĉ`, etc.).
+  - Functions to handle placeholders (for skipping `%...%` or local-only `@...@` replacements).
+  - The main orchestration function (`orchestrate_comprehensive_esperanto_text_replacement`) that actually performs multi-step replacements on text.
+  - A parallel-processing approach (`parallel_process`) that can break text into lines and handle them across multiple processes.
 
-### 1.2 文字列(漢字)置換モジュール (esp_text_replacement_module.py)
+- **`esp_replacement_json_make_module.py`**  
+  Another **utility** module used mostly in the JSON generation workflow. It includes:
+  - Additional transformations related to **word-stemming** or morphological expansions (particularly for Esperanto suffixes/prefixes).
+  - Functions for measuring text width (so that if the ruby text is significantly longer than the main text, it adjusts the style).
+  - Functions to build the combined JSON dictionary from raw CSV/JSON data, with special priority logic for multi-character roots.
 
-- エスペラント特有文字 (ĉ, ĝ など) の表記ゆれを一元化する関数や、  
-  `%...%` や `@...@` で囲まれたテキストを局所的にスキップ/局所置換する仕組みなど、  
-  **「入力テキストをどう最終的に置換していくか」** の一連の関数が集められています。  
-- Streamlit 内部で、メインの変換処理(オールインワン)を担う `orchestrate_comprehensive_esperanto_text_replacement()` や、行単位で分割して並列処理する `parallel_process()` なども本モジュールに収録されています。
-
-### 1.3 JSONファイル生成モジュール (esp_replacement_json_make_module.py)
-
-- 補助ページ(エスペラント文(漢字)置換用のJSONファイル生成ページ.py) での**「置換用JSONを組み立てる」**処理を支えるモジュールです。  
-- CSVファイルを読み取って語根や訳語をまとめたり、動詞や名詞の語尾を付与した派生形を多数生成し、それらを**最終的に3種類**のリスト  
-  1. **全域置換用のリスト (replacements_final_list)**  
-  2. **二文字語根(2char root)の追加置換リスト (replacements_list_for_2char)**  
-  3. **局所的置換用リスト (replacements_list_for_localized_string)**  
-  にまとめ上げるまでのロジックが、関数群として実装されています。
-
----
-
-
-## 2. メインページ: main.py の仕組み
-
-ここでは**ユーザーが実際に置換処理を行う**ときの一連の手順を説明します。
-
-### 2.1 JSONファイル読み込みロジック
-
-```python
-selected_option = st.radio(
-    "JSONファイルをどうしますか？ (置換用JSONファイルの読み込み)",
-    ("デフォルトを使用する", "アップロードする")
-)
-```
-- **JSONファイルの扱い**  
-  - 「デフォルトを使用する」を選んだ場合 → `load_replacements_lists()` 関数(後述)により、アプリ内蔵のデフォルトJSONが読み込まれる。  
-  - 「アップロードする」を選んだ場合 → `st.file_uploader` からユーザーがアップロードした JSON を `json.load()` して読み込む。
-
-```python
-@st.cache_data
-def load_replacements_lists(json_path: str) -> Tuple[List, List, List]:
-    # JSONファイルをロードし、"全域替换用"、"局部文字替换用"、"二文字词根替换用" の3つのリストを返す
-```
-- Streamlit の `@st.cache_data` デコレータにより、読み込んだ JSON はキャッシュされ、**繰り返し再読込による遅延を防ぐ**ようになっています。  
-- JSON内には**3つのリスト**が格納されており、`("全域替换用のリスト", "局部文字替换用のリスト", "二文字词根替换用のリスト")`を分割して取り出しているのがポイントです。
-
-### 2.2 placeholders (占位符) の読み込み
-
-```python
-placeholders_for_skipping_replacements = import_placeholders(
-    './Appの运行に使用する各类文件/占位符(placeholders)_%1854%-%4934%_文字列替换skip用.txt'
-)
-placeholders_for_localized_replacement = import_placeholders(
-    './Appの运行に使用する各类文件/占位符(placeholders)_@5134@-@9728@_局部文字列替换结果捕捉用.txt'
-)
-```
-- 「%...%」で囲った箇所をスキップするときや、「@...@」で囲った箇所を局所的に置換するときに、**置換の衝突を防ぐため**のユニークな文字列(placeholder)をファイルから読み込みます。  
-- たとえば `%abc%` があったとき、まず `%abc% → (プレースホルダX)` へ仮置換し、そのあとはこの箇所が大域置換されないようブロックする、という使い方をします。
-
-### 2.3 並列処理の設定と注意点 (multiprocessing / spawn start method)
-
-```python
-try:
-    multiprocessing.set_start_method("spawn")
-except RuntimeError:
-    pass
-```
-- **Windows等の環境でmultiprocessingを使う際、エラーが出るのを防ぐため**に、`spawn` モードを明示設定しています。  
-- `try-except` で囲んでいるのは、すでに別の箇所で start method が設定済みの場合を想定しているからです。  
-
-```python
-use_parallel = st.checkbox("並列処理を使う", value=False)
-num_processes = st.number_input("同時プロセス数", min_value=2, max_value=4, value=4, step=1)
-```
-- ユーザーが**並列処理を使うかどうか**を選べる仕組みになっています。  
-  - Python標準の multiprocessing.Pool を使い、**行単位**で文字列変換処理を分散実行させるのが目的です。  
-  - ただし、巨大テキスト(数万行以上) でなければ並列化のオーバーヘッドが大きくなる場合もあるため、チェックボックスで選べる形になっています。
-
-### 2.4 入力テキストの取得 (手動入力 or ファイルアップロード)
-
-```python
-source_option = st.radio("入力テキストをどうしますか？", ("手動入力", "ファイルアップロード"))
-```
-- どちらでも最終的には `text_area` に文字列を読み込みます。
-- 手動入力の場合 → そのままユーザーがテキストを貼り付け  
-- ファイルアップロードの場合 → `st.file_uploader` で読み込み、`.read().decode("utf-8")` したテキストを `text_area` の初期値として表示
-
-### 2.5 文字列(漢字)置換の実行フロー
-
-#### (1) 「送信」ボタンが押されたとき
-
-```python
-if submit_btn:
-    # (a) テキストをセッションステートに保存
-    st.session_state["text0_value"] = text0
-    # (b) 並列処理 or 単一プロセスを選択
-    if use_parallel:
-        processed_text = parallel_process(...)
-    else:
-        processed_text = orchestrate_comprehensive_esperanto_text_replacement(...)
-```
-- ボタンが押されたら、**メインの置換処理**を呼び出します。  
-  - `parallel_process()` は**行単位で分割し、プロセスプールで部分的に `orchestrate_comprehensive_esperanto_text_replacement()` を呼び出す**ヘルパー関数です。  
-  - `orchestrate_comprehensive_esperanto_text_replacement()` は**すべて単一スレッドで実行**します。
-
-#### (2) `orchestrate_comprehensive_esperanto_text_replacement()` の中で行われること
-
-後述「4.3 orchestrate_comprehensive_esperanto_text_replacement() で行われる処理手順」をご参照ください。  
-要点だけ箇条書きすると:
-
-1. まずエスペラント文字表記(ĉ 等)を**字上符形式**(circumflex)に正規化  
-2. `%...%` で囲まれた箇所をプレースホルダに置換し、**スキップ扱い**(後段で置換しないように)  
-3. `@...@` で囲まれた箇所は**局所的な置換**(別リストを適用)  
-4. その後、大域置換リストを適用 → `(old, new, placeholder)` の仕組みで**安全に**置換  
-5. 2文字語根の置換を2回行う (ちょっと特殊なアプローチ)  
-6. プレースホルダ(%)や(@)の部分を**復元**  
-7. (HTML形式の場合) 改行を `<br>` に変換し、連続スペースを `&nbsp;` にする  
-
-### 2.6 出力形式(HTML/括弧形式/単純置換等)の反映
-
-```python
-format_type = st.selectbox(
-    "出力形式を選択:",
-    [
-        "HTML格式_Ruby文字_大小调整",
-        "HTML格式_Ruby文字_大小调整_汉字替换",
-        "HTML格式",
-        "HTML格式_汉字替换",
-        "括弧(号)格式",
-        "括弧(号)格式_汉字替换",
-        "替换后文字列のみ(仅)保留(简单替换)"
-    ]
-)
-```
-- この `format_type` は `orchestrate_comprehensive_esperanto_text_replacement()` 内でも参照され、**ルビタグをどう組み立てるか**、または**括弧形式で `(元単語)` を追記するか**といった出力表現が変わります。
-
-### 2.7 ダウンロードおよび最終表示
-
-- 出力結果 `processed_text` が得られた後、以下のような表示を行います:  
-  1. **プレビュー用のテキストエリア**  
-     - 大量テキストの場合は先頭数百行 + 末尾3行のみを表示し、中間を省略するようになっている。
-  2. **HTML形式の場合**は2つのタブを用意  
-     - タブ1: `components.html(...)` で**実際のHTMLレンダリング**をスクロール表示  
-     - タブ2: `st.text_area(...)` でHTMLソースをそのまま表示  
-  3. 「置換結果のダウンロード」ボタン  
-     - ダウンロードする際の `mime="text/html"` は、HTMLフォーマットでも単純テキストとしてでも受け取れるようにする意図。
+Essentially, the two `.py` modules do the heavy lifting behind the scenes, while the two **Streamlit scripts** (`main.py` and `JSON File Generation Page...py`) provide the user interface.
 
 ---
 
+## 2. `main.py`: The Primary Streamlit Application
 
-## 3. 補助ページ: エスペラント文(漢字)置換用のJSONファイル生成ページ.py の仕組み (置換用JSONファイルを自分で作りたい場合)
-
-### 3.1 CSVファイルやユーザー定義JSONファイルの取り扱い
-
-補助ページの目的は、**巨大な 置換用JSONファイル(合并3个JSON文件) を生成し、ダウンロードする**ことです。  
-
-1. **CSVファイルの読み込み**  
-   例えば「エスペラント語根と日本語訳の対応関係」を記したCSVなどをアップロード/デフォルト読み込みする。  
-   - `pd.read_csv(...)` で2列 (語根 / 対応ルビ) を取得し、DataFrameとして保持。  
-
-2. **ユーザー定義JSON(語根分解法/置換後文字列)の読み込み**  
-   - *サンプル: `世界语单词词根分解方法の使用者自定义设置.json`*, *`替换后文字列(汉字)の使用者自定义设置.json`*  
-   - これらは「特定の語根はどう分解し、どういう接尾辞を追加するか」「カスタムの(エスペラント→漢字)を定義するか」などの詳細ルールを記述するもの。  
-
-### 3.2 置換用JSONファイル「3種類のリスト」(全域用 / 局所用 / 二文字語根用) を生成するまでの流れ
-
-補助ページ(エスペラント文(漢字)置換用のJSONファイル生成ページ.py) の**大まかな流れ**は下記のようになります:
-
-1. **(大規模データ読み込み)**  
-   - `PEJVO(世界语全部单词列表)...json` や `世界语全部词根_约11137个_202501.txt` などの内部ファイルを開き、すべてのエスペラント語根を辞書型に格納する。  
-
-2. **(CSVを反映)**  
-   - CSV (語根→日本語/漢字) を読み込み、既存の語根辞書を**上書き or 補完**する形で置換後文字列を埋め込む。  
-   - `output_format(エスペラント語根, 対応訳語, format_type, char_widths_dict)` を呼び出し、HTMLルビ形式や括弧形式など**指定フォーマット**の文字列を生成。  
-
-3. **(単語の文字数に応じた優先順位付け)**  
-   - たとえば**(文字数 × 10000)** のように、大きい数字を付与。これが**置換の優先順位**になります(文字数の多い単語から置換するように)。  
-
-4. **(語尾・接尾辞の展開)**  
-   - 動詞活用(as, is, os, us, ...)、名詞語尾(o, on, oj, ...)、形容詞語尾(a, an, aj, ...)、さらには **接頭辞**や**2文字語根**特有の展開などを大量に組み合わせて新たな候補を作り出す。  
-   - 「custom_stemming_setting_list」(= ユーザー定義JSON) で定義された語根もここで**特別扱い**して追加・削除を行う。  
-   - 結果として、**「〜さん」「〜たち」「〜される」「〜している」** 等のバリエーションが大量に生成されるわけです。
-
-5. **(最終リスト3種を組み立て、JSONにまとめる)**  
-   - 「全域置換用のリスト」(最も重要)  
-   - 「局所置換用のリスト」( `@...@` 用 )  
-   - 「二文字語根のリスト」( `al, am, av, bo...` などの特殊処理用 )  
-   - これらを1つの辞書にまとめて `json.dumps(...)` し、**ダウンロードボタン**を提供する。
-
-### 3.3 動詞・名詞語尾の追加など細かい語尾展開ロジック
-
-エスペラント文(漢字)置換用のJSONファイル生成ページ.py の中盤以降は、非常に長い if文や for文で:
-
-- 「**名詞**かつ文字数が6以下の場合、さらに派生形 `〜o, 〜on, 〜oj` なども追加で生成し、優先順位を `(文字数 + len('on'))×10000 - 3000` にする」  
-- 「**動詞**の場合は、活用語尾(as, is, os, us... あるいは受動形 at, it, ot...)を付けた派生単語も作る」  
-- 「an, on のような2文字語根に対して**o(名詞語尾)** を付ける」  
-- さらにユーザーが「この語根は -1 (除外)」 と指定した場合は**辞書から消去**する  
-
-…という処理を延々と行っています。  
-これにより、非常に細かい語尾や派生形を**一括生成**できる仕組みになっています。
-
-### 3.4 大量データをどうやって合成し、優先順位(文字数×10000)を付けているか
-
-- **置換精度向上のため**に、「文字数の多い(複合語)」を先にマッチさせる必要があります。  
-  例えば「transliterator」を「trans + liter + ator」にマッチするより先に、**「transliterator」**という長い単語として置換したい場合があります。  
-- そのため、最終的には `(単語の長さ) × 10000` のように比較的大きな数値を計算し、**descending(降順)** でソートしてから**「old → placeholder → new」**としてまとめられています。
-
-
----
-
-
-## 4. esp_text_replacement_module.py (文字列置換モジュール) の詳細
-
-ここには**本番の置換**で呼ばれる重要な関数が詰め込まれています。
-
-### 4.1 エスペラント文字表記 (ĉ → cx 等) 関連の変換関数たち
-
+### 2.1 Imports & Setup
 ```python
-x_to_circumflex = {
-    'cx': 'ĉ', 'gx': 'ĝ', ...
-}
-
-def convert_to_circumflex(text: str) -> str:
-    text = replace_esperanto_chars(text, hat_to_circumflex)
-    text = replace_esperanto_chars(text, x_to_circumflex)
-    return text
-```
-- `x`形式 (cx) や `^`形式 (c^) で入力されたエスペラント文字を**最終的に ĉ, ĝ 等の字上符**に変換するための辞書が定義されています。  
-- `replace_esperanto_chars()` は `str.replace()` を連続的に行うシンプルな実装です。  
-- main.py 側では「最終出力」において `letter_type` を選べるようになっています(「x形式で出力」「^形式で出力」「字上符で出力」)。  
-  - したがって最初にすべてを ĉ などに正規化しておき、最後にユーザーが指定した表記法に合わせて再変換する形です。
-
-### 4.2 大域置換 / 局所置換 / skip置換(“%...%”) / placeholders の仕組み
-
-- `%...%` に囲まれた文字列は**大域置換の影響を受けない**ように一時的にプレースホルダに置換します。 (例: `%secret% → [PLACEHOLDER_abc]`)  
-- `@...@` に囲まれた文字列は**「局所置換リスト(replacements_list_for_localized_string)」だけ**を適用します。大域置換はしません。  
-- これらが最終的に復元されるので、**「大域置換」 → 「局所置換部は置換対象外 or 別処理」**が実現できます。  
-
-### 4.3 orchestrate_comprehensive_esperanto_text_replacement() で行われる処理手順
-
-```python
-def orchestrate_comprehensive_esperanto_text_replacement(
-    text,
-    placeholders_for_skipping_replacements,
-    replacements_list_for_localized_string,
-    placeholders_for_localized_replacement,
-    replacements_final_list,
-    replacements_list_for_2char,
-    format_type
-) -> str:
-    # (1) 半角スペース正規化 → (2) エスペラント文字(ĉ等)に統一
-    # (3) %...% スキップ部をプレースホルダに差し替え
-    # (4) @...@ 局所置換を適用
-    # (5) 大域置換リストを適用 (old→placeholder→new)
-    # (6) 二文字語根を2回追加で置換
-    # (7) placeholderを最終文字列に戻す
-    # (8) HTML形式の場合、改行→<br>、スペース→&nbsp;変換
-```
-順番をおさらいすると:
-
-1. **`unify_halfwidth_spaces(text)`**: 半角スペースっぽい文字(U+00A0など)をASCII半角スペースに統一  
-2. **`convert_to_circumflex(text)`**: `cx, c^` 等を `ĉ` に変換 (先述)  
-3. **%スキップ**  
-   - `create_replacements_list_for_intact_parts(text, placeholders_for_skipping_replacements)` → `%abc%` の個所を**特殊プレースホルダ**に変換  
-   - 変換後、一時的に `%abc% → [PLACEHOLDER]` となる  
-4. **@局所置換**  
-   - `create_replacements_list_for_localized_replacement()` で抽出した文字列だけ**「局所置換リスト」**を適用  
-   - その結果 `@abc@ → (一時プレースホルダX)` となり、内部では**CSV由来の小さな置換**だけ実行  
-5. **大域置換**(replacements_final_list)  
-   - `(old, new, placeholder)` の形式を使い、「old → placeholder → new」という2段階置換を実行  
-   - いきなり `old → new` とやると、置換対象文字列が重複してまた置換される等の**衝突**が起きる恐れがあるため、  
-     **一旦 placeholder を挟む** ことで安全性を高めています。  
-6. **2文字語根の置換(2回)**  
-   - `replacements_list_for_2char` は接頭辞/接尾辞レベルの単語に使う特殊置換。  
-   - なぜ2回やるのか → 2文字語根の場合に、1回の置換後にさらに別の2文字とマッチさせたいケースがあるから(詳細はコード参照)。  
-7. **復元**  
-   - `%...%` / `@...@` でプレースホルダ化していた部分を元に戻す  
-8. **HTML整形**  
-   - もし `format_type` が `HTML*` 系なら、改行→`<br>`、スペース→`&nbsp;` に変換  
-   - `apply_ruby_html_header_and_footer()` で `<style>` や `<body>` タグを付け足す  
-
-### 4.4 multiprocessing の parallel_process()
-
-```python
-def parallel_process(
-    text: str,
-    num_processes: int,
-    placeholders_for_skipping_replacements,
-    replacements_list_for_localized_string,
+import streamlit as st
+import multiprocessing
+import json
+# ...
+from esp_text_replacement_module import (
+    x_to_circumflex,
+    x_to_hat,
+    hat_to_circumflex,
     ...
-    format_type: str
-) -> str:
-    # textを行単位に分割し、分割した部分を
-    # Pool.starmap(process_segment, [...]) で並列処理
-    # 最後に''.joinして返す
+    orchestrate_comprehensive_esperanto_text_replacement,
+    parallel_process,
+    apply_ruby_html_header_and_footer
+)
 ```
+- Notable is the `multiprocessing.set_start_method("spawn")` block. On some platforms, especially in Streamlit Cloud or Windows, this ensures stable parallelism without `PicklingError`.
 
-- ユーザーが選んだ「同時プロセス数」だけプロセスを立ち上げ、  
-  テキストを**行単位**で分割して `process_segment()` を実行させる仕組みです。  
-- `process_segment()` は単に `orchestrate_comprehensive_esperanto_text_replacement()` を呼び出すだけなので、**並列実行の粒度は「行」**です。  
-  - 行数が非常に多いテキスト (大量文章) であれば高い効果が期待できる反面、分割単位が不均一だと速度が出にくい場合がある点に注意が必要です。
+- We also see a `@st.cache_data` decorator in `load_replacements_lists()`. This caches the loaded JSON so that re-runs don’t repeatedly parse large JSON files.
+
+### 2.2 Page Configuration
+```python
+st.set_page_config(page_title="Esperanto Text (Kanji) Replacement Tool", layout="wide")
+```
+Streamlit’s built-in function sets the page’s browser tab title and layout mode to “wide”.
+
+### 2.3 Loading the Replacement JSON
+The user is prompted to either:
+1. **Use the default JSON**, loaded from a path in the repository.
+2. **Upload** a JSON file via file-uploader.
+
+When the JSON is loaded successfully, three lists are extracted:
+
+- `replacements_final_list`  
+  The big global replacement list, e.g., `("kanto", "<ruby>kanto<rt>someKanji</rt></ruby>", "somePlaceholder")`.
+- `replacements_list_for_localized_string`  
+  This is used if the user encloses text in `@...@`.
+- `replacements_list_for_2char`  
+  This deals specifically with short (two-character) Esperanto roots or suffixes like `-ad, -as, -is`, etc.
+
+### 2.4 Placeholders for Skipping & Localized Replacement
+```python
+placeholders_for_skipping_replacements = import_placeholders(...txt)
+placeholders_for_localized_replacement = import_placeholders(...txt)
+```
+- These come from text files listing unique placeholder strings. The reason is that we do a two-phase or multi-phase replacement approach:  
+  1. Replace the old substring with a unique placeholder that **does not** appear in normal text.  
+  2. Then replace that placeholder with the final new substring.  
+- This technique **avoids** collisions, e.g., accidentally re-replacing already replaced text.
+
+### 2.5 Advanced Settings: Parallel Processing
+```python
+use_parallel = st.checkbox("Enable parallel processing", value=False)
+num_processes = st.number_input("Number of parallel processes", min_value=2, max_value=4, ...)
+```
+- If parallel processing is enabled, the text replacement is carried out by splitting the user’s input text into lines, distributing them among multiple processes, and merging the results.
+
+### 2.6 Input Text
+We see two main options:
+- Manual text in a `st.text_area`
+- File upload (`st.file_uploader`)
+
+### 2.7 The Replacement Process
+When the user clicks **Submit**, the core logic is:
+```python
+if use_parallel:
+    processed_text = parallel_process(
+        text=text0,
+        num_processes=num_processes,
+        ...
+    )
+else:
+    processed_text = orchestrate_comprehensive_esperanto_text_replacement(
+        text=text0,
+        ...
+    )
+```
+**`orchestrate_comprehensive_esperanto_text_replacement()`** is the all-in-one function that:
+
+1. Normalizes spaces.  
+2. Converts `cx`, `c^`, etc. to the unified form `ĉ`.  
+3. Temporarily replaces anything inside `%...%` with placeholders so it’s **skipped** from Kanji transformations.  
+4. Temporarily processes anything inside `@...@` using a localized replacement list.  
+5. Applies the big global replacement list to the entire text.  
+6. Applies the 2-char root replacement (potentially in multiple passes).  
+7. Restores placeholders back into the final text.  
+8. If the format is HTML-based, it does some post-processing (like converting newlines to `<br>` and turning multiple spaces into `&nbsp;` sequences).
+
+**`parallel_process()`** does the same but splits the input text line by line among multiple processes. Each chunk is run through `orchestrate_comprehensive_esperanto_text_replacement()` in parallel, then results are joined.
+
+### 2.8 Final Output
+After processing, the script:
+- Potentially modifies the text again for Esperanto letter output style (like `cx` or `c^`).
+- Calls `apply_ruby_html_header_and_footer(processed_text, format_type)`, which might wrap the text in `<html>` + `<style>` + `</html>` if the user wants an advanced HTML style for the ruby annotations.
+- Shows the **preview** in tabs.  
+- Provides a **Download** button to get the result file (`replacement_result.html` or so).
 
 ---
 
+## 3. `JSON File Generation Page for Esperanto Text (Kanji) Replacement.py`
 
-## 5. esp_replacement_json_make_module.py (JSON生成モジュール) の詳細
+This file is placed in the `pages/` folder typical of Streamlit’s multi-page setup. It’s a separate UI that advanced users can open from the sidebar. Its goal is to produce a large JSON combining:
 
-補助ページ (エスペラント文(漢字)置換用のJSONファイル生成ページ.py) が主にこのモジュールの関数を呼び出して**最終的なJSONを組み立て**ています。
+- “Global Replacement” rules
+- “2-character root” rules
+- “Localized” or partial replacement rules
 
-### 5.1 CSVデータの読み込みと safe_replace() の組み合わせ
+### 3.1 The Flow
+1. **User picks/loads a CSV** with `[Esperanto root, Kanji or other translations]`.
+2. **User picks/loads** one or two JSON files that define custom word-stemming or custom replacement items.
+3. Possibly configures parallel processing.  
+4. Hits **“Create the replacement JSON file”**.  
+5. The code merges it all, performing morphological expansions (like “root + as”, “root + an” etc.).  
+6. The final structure is dumped into a single JSON. The user can download that to then feed into `main.py`.
 
-- CSVから読み込んだ (エスペラント語根, 訳語ルビ) のペアを大量に保持したのち、  
-  それらを `safe_replace()` などを使い、**一括で「文字列(漢字)を置換しやすい形式」に変換**していきます。  
-- 同名関数 `safe_replace()` が main.py 側にもあり、エスペラント文(漢字)置換用のJSONファイル生成ページ.py 側にもあるのは**重複定義**ですが、呼び出し元が異なるため両方に同居しています。
-
-### 5.2 output_format() によるルビ付与・漢字置換のバリエーション
-
+### 3.2 Core Logic
+The critical function is triggered by:
 ```python
-def output_format(main_text, ruby_content, format_type, char_widths_dict):
-    # format_type に応じて、HTMLルビ、括弧形式、単純置換などを生成する
+if st.button("Create the replacement JSON file"):
+    # ...
 ```
-- たとえば `format_type == 'HTML格式_Ruby文字_大小调整'` のときは、「文字幅」に応じて `<rt class="L_L">` などを付け分ける実装がなされています。  
-  - `measure_text_width_Arial16()` や `insert_br_at_half_width()` などを使い、**ルビ文字列が親文字列より長い場合に改行**する等の処理が行われる。  
-- `括弧(号)格式` の場合は単に `main_text(ruby_content)` のように括弧で括るだけ、  
-- `替换后文字列のみ(仅)保留(简单替换)` の場合は `ruby_content` だけ出す、など**まとめて出力形態を切り替える**仕組みです。
+Inside, you’ll see it do:
+- **Load** a massive dataset (`E_stem_with_Part_Of_Speech_list`, `E_roots`, etc.) from local JSON/TXT.  
+- Build a dictionary mapping each Esperanto root to a “replacement” form.  
+- Sort them by priority (longer strings first to avoid partial overshadowing).  
+- Insert placeholders so that the final list is of the form `(old_string, new_string, placeholder)`.  
+- For suffix/prefix expansions, it references:
 
-### 5.3 parallel_build_pre_replacements_dict() の並列化 (JSON作成時の最適化)
+  ```python
+  suffix_2char_roots=['ad','ag','am',...]
+  prefix_2char_roots=['al','am','av',...]
+  standalone_2char_roots=['al','ci','da',...]
+  ```
 
-```python
-def parallel_build_pre_replacements_dict(
-    E_stem_with_Part_Of_Speech_list,
-    replacements,
-    num_processes
-) -> Dict[str, List[str]]:
-    # E_stem_with_Part_Of_Speech_listを分割し、
-    # process_chunk_for_pre_replacements() を並列に実行してマージ
+- If the user has a custom JSON for morphological rules, e.g., “verbo_s1” that means “attach the endings `-as, -is, -os`,” it does that.  
+- If the user has a custom “replacement items” JSON, it merges those overrides.  
+- Finally, it forms three arrays in the final JSON:
+  1. `replacements_final_list`
+  2. `replacements_list_for_2char`
+  3. `replacements_list_for_localized_string`
+
+Hence, the output JSON is structured as:
+```json
+{
+  "全域替换用のリスト(列表)型配列(replacements_final_list)": [...],
+  "二文字词根替换用のリスト(列表)型配列(replacements_list_for_2char)": [...],
+  "局部文字替换用のリスト(列表)型配列(replacements_list_for_localized_string)": [...]
+}
 ```
-- (エスペラント文(漢字)置換用のJSONファイル生成ページ.py) で使われる関数。**エスペラントの語根 + 品詞情報**を大量に抱えたリストを分割し、各パートで `safe_replace()` して部分的な結果辞書を返し、それを最終的にマージする。  
-- **数万〜数十万規模**のデータを扱うときに速度向上が見込めます。
-
-### 5.4 remove_redundant_ruby_if_identical() (重複ルビ除去のトリック)
-
-```python
-IDENTICAL_RUBY_PATTERN = re.compile(r'<ruby>([^<]+)<rt class="XXL_L">([^<]+)</rt></ruby>')
-def remove_redundant_ruby_if_identical(text: str) -> str:
-    # <ruby>xxx<rt class="XXL_L">xxx</rt></ruby> のような
-    # 親文字列とルビが完全に同じ場合は <ruby>...</ruby> を除去して xxx にする
-```
-- CSVなどで「エスペラント単語」と「同じ文字列(漢字変換前後で同じ)」がマッピングされた場合などにルビを重複させても意味が無いので、  
-  このように**正規表現で「<ruby>xxx<rt>xxx</rt></ruby> を置き換える」**実装をしているわけです。
-
+This file can be multiple MB in size. The user can then click the “Download” button. That’s the end of the generation process.
 
 ---
 
+## 4. `esp_text_replacement_module.py`: Replacement Logic & Multiprocessing
 
-## 6. 補足ポイント
+This module is imported by `main.py`. It defines:
 
-### 6.1 文字数を元にした「置換優先度」の設計意図
+1. **Dictionaries** for Esperanto character transformations:
+   ```python
+   x_to_circumflex = { 'cx': 'ĉ', 'gx': 'ĝ', ... }
+   hat_to_circumflex = { 'c^': 'ĉ', ... }
+   # etc.
+   ```
+   The same approach is repeated for going from `ĉ` → `cx` or `ĉ` → `c^`, etc.
 
-- 「(old単語の文字数) × 10000」 というのが、エスペラント文(漢字)置換用のJSONファイル生成ページ.py コード内の**肝**になっています。  
-- 文字数が長い単語ほど優先度が高い → **前方一致でマッチしたときに、短い語根に先に置換されてしまう」誤置換を防ぐ**ための仕組みです。  
-- 例: "kanto" という語根より "kanton" "kantalupo" など6文字・7文字の複合語を先に置換すべき場合があります。
+2. **`replace_esperanto_chars(text, char_dict)`**  
+   A helper that straightforwardly does `text.replace(original, converted_char)` for each pair in `char_dict`.
 
-### 6.2 Streamlit特有の注意点 (セッションステート, レイアウト, @st.cache_data, etc.)
+3. **`safe_replace(text, replacements: List[Tuple[str, str, str]])`**  
+   This is the multi-step approach for (old → placeholder) then (placeholder → new). It prevents partial conflicts or repeated replacements.
 
-- **`st.session_state`**  
-  - メインページでユーザーが入力したテキストをフォーム提出後も保持するために使っています。  
-- **`@st.cache_data`**  
-  - JSONファイルの読み込みをキャッシュしておき、**何度もロードする際にリソースを節約**します。  
-- **ページレイアウト**  
-  - `st.set_page_config(layout="wide")` や `components.html()` などで横幅を広く使い、HTMLプレビューを埋め込めるようにしている。  
+4. **Placeholder detection** for `%...%` and `@...@`:  
+   - `find_percent_enclosed_strings_for_skipping_replacement()`
+   - `find_at_enclosed_strings_for_localized_replacement()`
+   - These let you do “skip blocks” or “local blocks” of replacement.
 
-### 6.3 大規模辞書(50MB級のJSON)を扱うときのパフォーマンス戦略
+5. **`orchestrate_comprehensive_esperanto_text_replacement()`**  
+   The **heart** of the entire replacement pipeline:
+   - Normalizes halfwidth spaces.
+   - Converts to “circumflex” style (if desired).
+   - Temporarily replaces `%...%` blocks so they remain intact.
+   - Temporarily replaces `@...@` blocks with partial rules.
+   - Applies global replacement list (the “(old, new, placeholder)” style).
+   - Applies 2-char root list. Possibly does it in multiple passes.
+   - Restores placeholders for `%...%` and `@...@`.
 
-- **@st.cache_data** の活用により、再読み込みを抑制する。  
-- **multiprocessing** での行単位並列化を有効活用する(特に main.py)。  
-- **エスペラント文(漢字)置換用のJSONファイル生成ページ.py** 側の JSON 生成も、parallel_build_pre_replacements_dict() で**部分的に並列化**。  
-- ただし Windows + Python + Streamlit の環境だとプロセスの立ち上げにオーバーヘッドがあるので、**テキスト行数がそこそこ大量**の場合にのみ効果がある。
+6. **`parallel_process()`**  
+   Splits input text by lines, uses `multiprocessing.Pool(...).starmap(...)` to apply `process_segment()` on each chunk. Then merges results.  
+   `process_segment()` basically calls the main orchestration function on its portion of the lines.
 
+7. **`apply_ruby_html_header_and_footer()`**  
+   If the user wants an HTML/ruby-based output, wraps the result in a `<style>` block or `<ruby>` CSS to control the size/position of the annotation text.
+
+In short, `esp_text_replacement_module.py` is **the** engine for the actual text transformations and concurrency.
 
 ---
 
-# まとめ
+## 5. `esp_replacement_json_make_module.py`: JSON-Building & Word-Stemming Logic
 
-本アプリは、**「エスペラント文を(漢字)置換する」**というニッチな要件に合わせて、非常に細かい語根展開・品詞展開が実装されています。  
+Similarly, this module is imported by the “JSON File Generation Page.” Its responsibilities:
 
-- `main.py` ではユーザーが最終的に「置換用JSON(3つのリスト)」を読み込み、テキストを入力して**一括変換**するのがメイン機能。  
-- `エスペラント文(漢字)置換用のJSONファイル生成ページ.py` では「それに使う巨大な JSON(合并済み) をどうやって作るか？」を**GUI上で実行可能**な形にしています。  
-- `esp_text_replacement_module.py` と `esp_replacement_json_make_module.py` は、それぞれ  
-  - **文字列置換の本体**(大域置換/局所置換/並列化/ルビ付加/スペース置換)  
-  - **置換用データ(語根/訳語/語尾展開等)を扱う際のツール群**  
-  をまとめたモジュールという位置づけです。
+1. **Redundant** or parallel definitions for x→circumflex dictionaries. (You’ll see repeated code from `esp_text_replacement_module.py`. They each have some overlap, likely for organizational convenience.)
 
-本番環境(クラウド or ローカル)で実際に動かす際は、**テキストが大きい場合に並列処理をONにする**などパフォーマンス面の工夫をすると効果的です。またユーザー定義JSONによって**細かい派生形をどう生成するか**も柔軟に変更できるため、大規模・緻密な翻訳ルールを扱う場合に適した設計になっています。  
+2. **Text Width Calculation**:
+   ```python
+   def measure_text_width_Arial16(text, char_widths_dict: Dict[str, int]) -> int:
+       total_width = 0
+       for ch in text:
+           char_width = char_widths_dict.get(ch, 8)
+           total_width += char_width
+       return total_width
+   ```
+   Then `insert_br_at_half_width` or `insert_br_at_third_width` can break the text with `<br>` if the ruby text is significantly longer/shorter than the main text.
 
-以上が、本アプリの仕組みを理解するためのポイントです。GUI操作はある程度わかっているとのことでしたので、**内部実装(どうやって置換フローを進めているか、どこでデータが合成されるか)** に注目して解説しました。実際の運用・改修の際には、ぜひ各モジュールの該当関数をカスタマイズしながら進めてみてください。  
+3. **`output_format(main_text, ruby_content, format_type, char_widths_dict)`**  
+   This produces the snippet (HTML or parentheses style) that merges the main text with a smaller annotation. For example, if `format_type` is `'HTML格式_Ruby文字_大小调整'`, it might do:
+   ```html
+   <ruby>main_text<rt class="M_M">ruby_content</rt></ruby>
+   ```
+   with different classes if the ratio of text widths is large or small.
+
+4. **`parallel_build_pre_replacements_dict()`**  
+   Another parallel function that processes big lists of roots. It uses `process_chunk_for_pre_replacements()` to do safe_replace in chunks.
+
+5. **Sizable logic** around morphological expansions, e.g., **applying suffix `-as, -is, -os`** for verbs, or `-an, -on` for nouns/adjectives. This is done by scanning dictionaries like `verb_suffix_2l = {'as':'as','is':'is','os':'os',...}`.  
+   The code attempts to generate all possible forms of an Esperanto root, set priorities, then store them in the final global replacement list.
+
+6. The final step typically is:
+   ```python
+   combined_data = {
+     "全域替换用のリスト(列表)型配列(replacements_final_list)": replacements_final_list,
+     "二文字词根替换用のリスト(列表)型配列(replacements_list_for_2char)": replacements_list_for_2char,
+     "局部文字替换用のリスト(列表)型配列(replacements_list_for_localized_string)": replacements_list_for_localized_string
+   }
+   download_data = json.dumps(combined_data, ensure_ascii=False, indent=2)
+   st.download_button(...)
+   ```
+
+This means each dictionary entry is turned into an array of tuples, eventually forming the final JSON structure the main page can parse.
+
+---
+
+## 6. Key Techniques & Considerations
+
+1. **Use of Placeholders**  
+   The reason for `(old → placeholder → new)` is to ensure no substring that was already replaced will get re-caught in subsequent replacements. This is especially critical in morphological expansions where part of a newly introduced substring might match another pattern.
+
+2. **Multipart Replacements**  
+   Because Esperanto can have “root + suffix + suffix + infix,” the code carefully organizes expansions by **priority** (longer strings first, or user-defined integer priority). This prevents short matches from overshadowing a more complete form.
+
+3. **Parallelism**  
+   - The app uses Python’s standard `multiprocessing.Pool` with the spawn method.  
+   - For large text input, line-based distribution is quite effective.  
+   - The user can control concurrency in both pages (the main page for text replacement, or the JSON generation page if building the large dictionary is slow).
+
+4. **Ruby Format Variation**  
+   The code sets up multiple “format_type” enumerations (HTML, parentheses, text-only). This approach is done by calling `output_format(main_text, ruby_content, format_type, char_widths_dict)`. So when building the final dictionary, you choose whether `kanto` becomes `<ruby>kanto<rt>某汉字</rt></ruby>` or just `kanto(某汉字)` or even replace the entire text with “某汉字” only.
+
+5. **Large File I/O**  
+   Some JSON files can be ~50MB. Because of that, there are frequent references to caching (`@st.cache_data`) and warnings to the user if they do not provide the file or if an error occurs.
+
+6. **Heavily Customized**  
+   Notice the code also references many advanced morphological or lexical expansions for Esperanto. That’s not purely a simple dictionary approach—rather, it can handle partial roots, suffixes/prefixes, case variations (capitalization, uppercase, etc.), and skip logic for special blocks.
+
+---
+
+## Conclusion
+
+- The **backbone** of this application is the multi-step text replacement approach in `esp_text_replacement_module.py`.
+- The **main** script (`main.py`) provides a user-facing interface to load the big JSON and run the replacements on user-supplied text, optionally in parallel.
+- The **secondary** Streamlit page (`JSON File Generation Page...py`) merges external data (CSV + optional custom JSONs) to **build** that big JSON, leveraging morphological expansions and suffix logic from `esp_replacement_json_make_module.py`.
+- Both `.py` **modules** heavily rely on placeholders, safe replacements, substring priority, and morphological expansions, reflecting a robust solution to a complicated multi-script transformation problem (Esperanto → Kanji + ruby).
+
+For an **intermediate programmer** exploring or extending this code:
+- Familiarize yourself with the **placeholder** pattern, as it’s central to safe replacements.  
+- Understand the **priority** sorting (longest match first) so that morphological expansions override shorter partial matches.  
+- Note how `parallel_process()` chunks the text for concurrency. If you want to adapt it for your environment, watch for the `spawn` method and potential pickling constraints.  
+- If you plan to add new morphological expansions or custom translations, you can either:
+  1. **Edit** the CSVs or custom JSON, then rebuild the combined JSON in the generation page.  
+  2. Directly append your new rules into the final JSON arrays.  
+
+**This completes the deep-dive into the codebase**. By understanding these interactions—**especially** the interplay of placeholders and morphological expansions—you can confidently modify, debug, or expand the system to suit new script conversions or advanced linguistic features.
