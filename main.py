@@ -362,5 +362,5 @@ st.write("---")
 # ページ下部に、アプリのGitHubリポジトリのリンクを表示
 #=================================================================
 st.title("GitHub Repository for This App")
-st.markdown("https://github.com/Takatakatake/Esperanto-Kanji-Converter-and-Ruby-Annotation-Tool-English")
+st.markdown("https://github.com/TakafumiYamauchi/Esperanto-Kanji-Converter-and-Ruby-Annotation-Tool-English")
 
