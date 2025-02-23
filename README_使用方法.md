@@ -1,344 +1,226 @@
-# Esperanto-Kanji-Converter-and-Ruby-Annotation-Tool-Beta
+# Esperanto-Kanji-Converter-and-Ruby-Annotation-Tool-English
+
+---
+Below is a **comprehensive English-language manual** intended for **GUI users in an English-speaking context**. It explains, in detail, how to use this Streamlit app—which consists of multiple Python files—to convert Esperanto text into a Kanji-enhanced version with optional ruby (furigana) annotations.
+
+---
+# Part 1: Overview
+
+This Streamlit application provides two main functionalities, each accessible on separate pages within Streamlit:
+
+1. **Main App Page** (`main.py`)  
+   - This is the primary interface for performing **Esperanto text (Kanji) replacement** and optional **ruby (furigana) annotations** on any text you supply. You can:
+     - Load or upload a custom JSON file that defines the replacement rules.
+     - Input or upload the text you want to process.
+     - Choose the output format (HTML with ruby, parentheses style, etc.).
+     - Retrieve your processed output (including a download button).
+
+2. **JSON File Generation Page** (`JSON File Generation Page for Esperanto Text (Kanji) Replacement.py`)  
+   - This is an **advanced/optional page** for those who want to **create or customize** the big replacement-rule JSON file themselves. If you do not want to create a custom JSON file, you can simply rely on the default JSON in the main page.
+   - By merging CSV-based data (Esperanto roots → translations) and custom morphological rules, it produces a large, combined JSON file. This JSON includes:
+     1. **Global replacement list** (used by main.py to do standard replacements).
+     2. **2-character root replacement list** (for short prefix/suffix roots).
+     3. **Localized replacement list** (for text enclosed in `@...@`).
 
 ---
 
-## 目次
-1. **アプリ概要**
-2. **アプリを構成するページ（画面）について**
-   - 2.1. メインページ：エスペラント文の置換・ルビ振りツール（`main.py`）
-   - 2.2. サブページ：置換用JSONファイル生成ツール（`エスペラント文(漢字)置換用のJSONファイル生成ページ.py`）
-   - 2.3. 補助モジュールコード（`esp_text_replacement_module.py`・`esp_replacement_json_make_module.py`）
-3. **メインページの使い方 (エスペラント文の置換・ルビ振り)**
-   1. JSONファイルの読み込み方法選択
-   2. プレースホルダー(占位符)の読み込みについて
-   3. 高度な設定（並列処理）
-   4. 出力形式を選択する
-   5. 入力テキストの準備
-   6. 変換を実行
-   7. 結果のプレビュー・ダウンロード
-   8. GitHubリポジトリへのリンク
-4. **サブページの使い方 (置換用JSONファイルの生成)**
-   1. 画面冒頭の概要説明
-   2. サンプルファイル(各種CSV, JSON, Excel)のダウンロード
-   3. 出力形式(“HTML形式”や“括弧形式”など)の指定
-   4. CSVファイルをアップロードまたはデフォルト使用
-   5. JSONファイル（語根分解法や置換後文字列設定）をアップロードまたはデフォルト使用
-   6. 高度な設定（並列処理）
-   7. 置換用JSONファイルを作成→ダウンロード
-5. **よくある疑問（Q&A）**
-   - A. `%...%`・`@...@` で囲む意味
-   - B. “並列処理を使う” チェックを入れるべきかどうか
-   - C. ダウンロードしたファイル（.json / .csv / .htmlなど）の使い方
-6. **注意点・トラブルシューティング**
+# Part 2: Main Page Usage (`main.py`)
+
+### 2.1 Purpose
+On the **main** page, you can take an Esperanto text (containing any subset of words, phrases, or paragraphs) and **replace** parts of it with Kanji or other script, optionally with a ruby-like annotation. This allows for:
+
+- **Bilingual or multi-script text**: e.g., “Esperanto word (with Kanji) + small annotation on top.”
+- **Previewing the replaced text** in HTML format or in other stylings (parentheses, text only, etc.).
+- **Downloading** the processed text as an HTML file.
+
+### 2.2 Accessing the Page
+When you launch the Streamlit app (for example, on Streamlit Cloud or locally), you will see a sidebar or navigation menu. The default page is typically the “main” page. The title displayed is:
+
+> **Extended Tool for Replacing Esperanto Text with Kanji and Adding Ruby Annotations**
+
+### 2.3 Steps to Use the Main Page
+
+1. #### Select or Upload Your Replacement JSON
+   Near the top, you’ll be prompted:
+   > *How would you like to load the replacement JSON file?*  
+   You have two options:
+   - **Use the default JSON file**: If you don’t have a customized file, pick this. The app loads a default, pre-merged JSON behind the scenes.
+   - **Upload a JSON file**: If you already generated a custom JSON using the “JSON File Generation Page” or have your own, you can upload it here.
+
+   There’s also an **expander** labeled **"Sample JSON (Replacement JSON file)"**, inside which you can download a **sample** if you wish to see the format.
+
+2. #### (Optional) Parallel Processing Settings
+   You’ll see a section labeled **“Advanced Settings (Parallel Processing)”**.  
+   - If you want to process very large input texts more quickly, you can enable **Enable parallel processing** and then specify the **Number of parallel processes** (2–4).  
+   - By default, parallel processing is **off**. Most typical texts are processed very fast even without parallelization, but large texts may benefit from it.
+
+3. #### Choose Output Format
+   A dropdown labeled **"Choose the output format..."** provides multiple styles for the processed text, including:
+   - **HTML Ruby with size adjustment**  
+     (Shows the Esperanto word with a “ruby” of Kanji or vice versa, automatically adjusting the font size so that longer rubies are shrunk more.)
+   - **HTML Ruby with size adjustment + Kanji replacement**  
+     (Same as above, but the main text is Kanji and the smaller annotation is the original Esperanto.)
+   - **HTML format only**  
+     (Straight ruby annotation, but no special size scaling.)
+   - **HTML format + Kanji replacement**
+   - **Parentheses format**  
+     (Displays the new text as `EsperantoWord(Kanji)`.)
+   - **Parentheses format + Kanji replacement**  
+     (Displays as `Kanji(EsperantoWord)`.)
+   - **Replace with Kanji (no markup), text only**  
+     (Simply replaces the Esperanto text with the corresponding Kanji or other script, with no parentheses or HTML markup.)
+
+4. #### Provide Input Text
+   You can supply the text to be processed in either of two ways:
+   - **Manual entry**: A text area to type or paste your Esperanto text.  
+   - **File upload**: If you prefer, you can upload a `.txt`, `.csv`, or `.md` file containing your text.
+
+5. #### Using Special Syntax for Skips and Local-Only Replacement
+   - **Skip** a portion of text from replacement by wrapping it with `%...%`. For instance, `%JenNoChange%` means the part `JenNoChange` remains untouched in the final output.  
+   - **Local-Only** replacement with `@...@`:  
+     If you specifically wrap something with `@...@`, only that enclosed portion is replaced with Kanji, and everything else is not replaced (except for globally replaced words that occur outside the `@...@` block).
+
+6. #### Configure Esperanto Special Characters Output
+   A small section asks:
+   > *Choose the output style for special Esperanto characters:*  
+   - **Use superscript notation**: e.g., `ĉ` → `cx` but stylized with a caret or circumflex.  
+   - **Use x notation**: e.g., `ĉ` becomes `cx`.  
+   - **Use ^ notation**: e.g., `ĉ` becomes `c^`.
+
+7. #### Click Submit (or Cancel)
+   - **Submit**: The app processes your text using the selected JSON rules and displays your replaced text.  
+   - **Cancel**: Aborts the current operation.
+
+8. #### View and Download the Results
+   - The app shows the processed text in a **tab or text area**. If you chose an HTML-based format, you get:
+     - **HTML Preview** (a live rendering)  
+     - **Replacement Result (HTML source)** (the raw HTML code)
+   - If the text is extremely long, the preview may show only partial lines, but the **download** file will contain the full result.
+   - Use the **Download button** to get an `.html` (or `.txt`) output that you can open or save locally.
+
+9. #### GitHub Link
+   At the bottom, there is a link to the **GitHub repository** for this app if you wish to see the code or contribute.
 
 ---
 
-## 1. アプリ概要
+# Part 3: JSON File Generation Page
+_File: `JSON File Generation Page for Esperanto Text (Kanji) Replacement.py`_
 
-このアプリは、以下の2つの主要な機能を提供します。
+### 3.1 Purpose
+This second page is designed for **advanced** or **power** users who wish to:
 
-1. **「エスペラント文を、指定ルールに従って(漢字)置換したり、HTML形式の訳ルビを振ったりする」**  
-   - メインページ（`main.py`）で提供される機能で、ユーザーが手動入力あるいはテキストファイルをアップロードし、さらに置換ルールを示すJSONファイルを指定することで、一括してエスペラント文章の文字列（漢字）置換やルビ振りを行うツールです。処理後のテキストを画面上に表示するほか、HTML形式などでダウンロードできます。  
+- **Create or customize** the large JSON file that the main page uses for the replacement rules.
+- Merge several data sources, such as:
+  - CSV files mapping **Esperanto roots** to Kanji/English translations.
+  - JSON files containing **custom morphological rules** (for advanced word-stemming or specialized replacements).
+- Automatically produce a single “merged replacement JSON” that you can then **download** and use in the main page.
 
-2. **「置換用JSONファイル（大量の置換ルール）を生成する」**  
-   - サブページ（`エスペラント文(漢字)置換用のJSONファイル生成ページ.py`）で提供される機能で、エスペラント語根と訳語や漢字との対応関係をまとめたCSVファイルなどを用い、最終的に置換に使う大規模なJSON（ルール）ファイルを作り上げることができます。このファイルを作成しておけば、メインページでの置換処理時にアップロードして活用できるようになります。
+If you do **not** need custom rules or your own CSV, you can skip this page. The main page has a default JSON that suffices in many cases.
 
-さらに内部実装として、**`esp_text_replacement_module.py`** と **`esp_replacement_json_make_module.py`** という2つのモジュールが用意されています。これらにはテキストの正規化や、ルビ付けロジック、多数のエスペラント語根を漢字に置換するための汎用的な関数・並列処理などが含まれており、メインページ・サブページ双方で呼び出されます。通常のGUI利用においては、これらのモジュールを直接操作する必要はありませんが、「どういう仕組みで置換が行われているのか」を深く理解したいときに参照できます。
+### 3.2 How It Works
+The page implements these steps internally:
 
----
+1. **Load CSV**: (Esperanto root → Kanji or other translations).  
+2. **Load Word-Stemming Rules (JSON)**: (Custom ways to break down a root or combine suffixes).  
+3. **(Optional) Load Additional Replacement Strings (JSON)**.  
+4. **Combine** all the above to produce three arrays in one big JSON:
+   1. **Global replacement list** (long list, used for standard word replacements),
+   2. **2-character root replacement list** (for short suffixes/prefixes),
+   3. **Localized replacement list** (used specifically for text enclosed in `@...@` in the main app).
 
-## 2. アプリを構成するページ（画面）について
+### 3.3 Steps to Use the Generator Page
 
-### 2.1. メインページ：エスペラント文の置換・ルビ振りツール（`main.py`）
+1. **CSV File Choice**  
+   - Decide whether to **upload** your own CSV or **use the default**.  
+   - This CSV typically has two columns: `[Esperanto root, translation (Kanji, English, etc.)]`.  
 
-- ページタイトル：**「エスペラント文を漢字置換したり、HTML形式の訳ルビを振ったりする (拡張版)」**  
-- 主な機能：
-  1. 置換ルールのJSONファイルを読み込む（デフォルトまたはアップロード）
-  2. テキストの入力方法（手動入力 or ファイルアップロード）を選択
-  3. 文字列を(漢字)置換する際の形式(HTMLルビ、括弧形式 など)を指定
-  4. `%...%` で囲んだ箇所を「置換スキップ」、`@...@` で囲んだ箇所を「局所置換」する機能
-  5. 並列処理のオン/オフやプロセス数の設定
-  6. 結果のプレビュー表示、またはダウンロード（HTML形式など）
+2. **Word-Stemming JSON File Choice**  
+   - Again, you can **upload** or **use the default**.  
+   - This JSON file can specify how to handle certain morphological expansions, e.g., if you want “am” to always be recognized as a verb root, plus standard endings.  
 
-### 2.2. サブページ：置換用JSONファイル生成ツール（`エスペラント文(漢字)置換用のJSONファイル生成ページ.py`）
+3. **Additional Replacement Strings JSON**  
+   - Optionally, you can also specify custom per-word overrides.  
+   - If you do not have any specialized overrides, select the default.
 
-- ページタイトル：**「エスペラント文の(漢字)置換に用いるJSONファイルを生成する」**  
-- 主な機能：
-  1. CSVやカスタムJSON設定ファイルをアップロード（またはデフォルト使用）
-  2. エスペラント語根と漢字・日本語訳ルビなどの対応表を編集して大規模JSONルールを作る
-  3. サンプルファイルを多数ダウンロードできるように提供（CSVやJSON、Excel 等）
-  4. 最終的な置換用JSONファイルをダウンロード可能
+4. **Advanced Settings (Parallel Processing)**  
+   - If the CSV is large, you can enable multiple processes.
 
-### 2.3. 補助モジュール（`esp_text_replacement_module.py`・`esp_replacement_json_make_module.py`）
+5. **Click “Create the replacement JSON file”**  
+   - The app merges everything, performing expansions such as “word + ‘as’” for verbs, or dealing with short suffixes like `-ad`, `-ig`, `-in`, etc.  
+   - It then **generates** a new JSON with three lists inside:  
+     - `"全域替换用のリスト(列表)型配列(replacements_final_list)"`  
+     - `"二文字词根替换用のリスト(列表)型配列(replacements_list_for_2char)"`  
+     - `"局部文字替换用のリスト(列表)型配列(replacements_list_for_localized_string)"`  
+   - A download button appears, letting you save this final combined JSON file locally.
 
-- **`esp_text_replacement_module.py`**  
-  メインページでの実際の置換を行う関数群、例：
-  - `orchestrate_comprehensive_esperanto_text_replacement`: スペースの正規化→字上符形式への変換→スキップ箇所・局所置換箇所の処理→大域置換…といった処理を一括で行うメイン関数
-  - `%...%` や `@...@` に関連するスキップ/局所置換の仕組み
-  - 並列処理で行を分割して高速に変換する `parallel_process` など
-
-- **`esp_replacement_json_make_module.py`**  
-  サブページでの置換ルールJSON作成を行う関数群、例：
-  - `parallel_build_pre_replacements_dict`: 大量の語根データを並列処理で一括変換
-  - `output_format`: “HTMLルビ形式”や “括弧(号)形式”など、ユーザー指定の形式に応じた文字列整形
-  - CSVやJSONを読み込み、内部的に大きな置換リストを統合した最終JSONを作る
-
----
-
-## 3. メインページの使い方 (エスペラント文の置換・ルビ振り)
-
-それでは、実際に**メインページ**（プログラムの中心となる `main.py`）のGUI上での操作手順を、画面に沿って説明します。
+6. **Use the Generated JSON on the Main Page**  
+   - After downloading the merged JSON, return to the **main page** (`main.py`), choose **Upload a JSON file**, and select the newly generated file to apply your custom rules.
 
 ---
 
-### 3.1. JSONファイルの読み込み方法選択
+# Part 4: Key Tips & Notes
 
-1. 画面上部にあるラジオボタン  
-   **「JSONファイルをどうしますか？ (置換用JSONファイルの読み込み)」**  
-   - 「デフォルトを使用する」  
-   - 「アップロードする」  
+1. **Large Files**:  
+   - The combined JSON can be quite large (tens of MB). If performance becomes slow, consider enabling parallel processing in both the generation page and the main page.
 
-2. 通常は試しに「デフォルトを使用する」を選ぶだけでもOKです。  
-   もしすでに自分が用意したJSONファイル（多数の置換ルールを含むもの）を利用したい場合は、「アップロードする」を選んでファイルを指定してください。
+2. **Reserved Syntax**:  
+   - `%text%` → Protects `text` from **any** replacement.
+   - `@text@` → Restricts replacement to `text` only. (This localized block is processed using the special list in the JSON.)
 
-3. JSONが正常に読み込まれると「デフォルトJSONの読み込みに成功しました。」（または「アップロードしたJSONの読み込みに成功しました。」）と表示されます。
+3. **Esperanto Special Characters**:  
+   - The app can handle `ĉ, ĝ, ĥ, ĵ, ŝ, ŭ` and their uppercase forms. In the final output, you can choose whether to display them as `cx, c^, Ĉ, etc.`
 
-4. **参考**：サンプルJSONファイルを入手したい場合、ページ内に「サンプルJSON(置換用JSONファイル)ダウンロード」ボタンもあります。必要に応じてダウンロード→編集してみてください。
+4. **Parallel Processing**:  
+   - Parallelization is typically done **line by line**. If your input text is huge, splitting the work across multiple processes can speed things up.
 
----
+5. **Download Buttons**:  
+   - The app’s “Download” button in Streamlit might produce a file named something like `replacement_result.html` or `final replacement list (merged 3 JSON files).json`.  
+   - You can rename it locally as desired.
 
-### 3.2. プレースホルダー(占位符)の読み込みについて
+6. **Possible Conflicts**:  
+   - If you have special morphological expansions in your custom JSON, you might see unexpected results. (Example: a suffix “an” might conflict with “Amerikan.”)  
+   - The advanced generation code tries to handle these via priorities and carefully merges items, but in unusual edge cases, you may need to tweak or remove certain entries in your CSV/JSON.
 
-- 画面内で、`import_placeholders(...)` を呼び出している部分があります。  
-  具体的には、  
-  - `%...%` で囲まれた箇所を置換スキップするためのプレースホルダー  
-  - `@...@` で囲まれた箇所を局所置換するためのプレースホルダー  
-  を読み込んでいます。これはプログラム内部で自動的に行われるので、ユーザーが意識して操作する必要はありません。
-
-- 要点だけ押さえておくと、**「%で囲むとその部分の文字列は一切置換されずにそのまま残る」**、**「@で囲むと、その部分の文字列だけ局所的に別のリストで置換される」** という仕組みです。（詳細は後述Q&A参照）
-
----
-
-### 3.3. 高度な設定（並列処理）
-
-- 画面下のほうに、**「高度な設定 (並列処理)」** という項目があります。  
-- ここで「並列処理を使う」にチェックを入れると、内部的に複数プロセス（CPUコア）を使ってテキスト置換を並列実行します。処理速度を速めたい大きなテキストに対して有効ですが、サーバ環境・クラウド環境によっては動作制限がある場合もあります。  
-- 「同時プロセス数」は2～4あたりが推奨です。あまり大きくしてもかえってオーバーヘッドが増え、速度が落ちる可能性があります。
+7. **Where to Get the Sample Files**:  
+   - In the “JSON File Generation Page,” an expander labeled **“Sample Files for Download”** offers sample CSVs and JSONs that illustrate the expected data format.
 
 ---
 
-### 3.4. 出力形式を選択する
+# Part 5: Frequently Asked Questions (FAQ)
 
-- **「出力形式を選択(置換用JSONファイルを作成したときと同じ形式を選択):」**  
-  下記のようなリストから希望の形式を選べます。
-  1. HTML格式_Ruby文字_大小调整
-  2. HTML格式_Ruby文字_大小调整_汉字替换
-  3. HTML格式
-  4. HTML格式_汉字替换
-  5. 括弧(号)格式
-  6. 括弧(号)格式_汉字替换
-  7. 替换后文字列のみ(仅)保留(简单替换)
+1. **Q**: Can I skip using the “JSON File Generation Page”?  
+   **A**: Yes. You can simply use the default JSON on the main page. The generation page is only if you want a very **tailored** set of replacement rules or want to merge your own dictionary data.
 
-- **例1**：  
-  「HTML格式_Ruby文字_大小调整」を選ぶと、  
-  ```html
-  <ruby>Esperant<rt class="S_S">エスペラント</rt></ruby>
-  ```
-  のようにエスペラント部分とルビ（訳語や漢字）とを1つの`<ruby>...</ruby>`タグでまとめ、ブラウザ上でルビ表示できるHTMLを得られます。  
-- **例2**：  
-  「括弧(号)格式」を選んだ場合は単純に  
-  ```
-  Esperant(エスペラント)
-  ```
-  というテキストになります。  
-- **例3**：  
-  「...汉字替换」と記載のある形式を選ぶと、メイン部分を漢字としてルビにエスペラント語根を振る・あるいはその逆…といった出力となります。
+2. **Q**: Why does the output HTML show `<ruby>...<rt>...</rt></ruby>` tags?  
+   **A**: That’s the standard way to display “ruby text” (like furigana) in HTML. Modern browsers typically support it well. If you prefer parentheses or no markup, select a different output format in the main page.
+
+3. **Q**: My output text is extremely long, and I only see part of it in the preview. Where is the rest?  
+   **A**: Streamlit sometimes truncates preview for very large strings. But the **downloaded file** is complete.
+
+4. **Q**: My text includes numeric digits or punctuation. Will they cause errors in the replacement?  
+   **A**: Typically no. The code primarily targets alphanumeric + Esperanto letters. Digits or punctuation do not get replaced unless explicitly defined in your CSV/JSON.
+
+5. **Q**: How do I handle an error “Failed to load the JSON file” in the main page?  
+   **A**: Double-check the file you uploaded is a valid `.json` with the correct structure. Possibly the JSON is corrupted or not in UTF-8. Also confirm you are not mixing up the large “combined JSON” with other file types.
+
+6. **Q**: What if the Kanji translation is identical to the original Esperanto root?  
+   **A**: Then the code may skip or treat them as duplicates. In many cases, it merges them. But if you see something undesired, consider removing or editing that entry in your CSV or JSON.
 
 ---
 
-### 3.5. 入力テキストの準備
+# Part 6: Conclusion
 
-- **「入力テキストのソース」**  
-  ラジオボタンで、  
-  1. **「手動入力」**  
-  2. **「ファイルアップロード」**  
-  を選択できます。
+This Streamlit application is quite **powerful** for those who want to experiment with **multi-script** or **Kanji-based** rendering of Esperanto text. You can use it **immediately** with the **default** rules on the **main** page, or **dig deeper** into morphological expansions, suffix handling, and specialized glosses by customizing the JSON generation in the **second page**.
 
-- **ファイルアップロード** を選んだ場合：
-  - 「テキストファイルをアップロード (UTF-8)」 というファイル選択が表示されるので、手元の`.txt`、`.md`、`.csv`など、UTF-8形式のファイルをアップロードします。
-  - 正常に読み込まれると「ファイルを読み込みました。」と表示されます。
+**Recommended usage**:
+1. Start with the **main page**. Upload or use the default JSON. Try a short Esperanto text and see how the tool transforms it.
+2. If you feel comfortable and want a specialized dictionary (for example, your own Kanji mappings or English rubies), proceed to the **“JSON File Generation Page”** to combine your CSV data with the morphological rules, then produce a new merged JSON to load on the main page.
 
-- **手動入力** を選んだ場合：
-  - 画面の「テキストエリア」が表示されます。ここに直接エスペラントの文章をペースト/入力してください。
+Enjoy exploring Kanji-based or multi-script transformations of Esperanto, and feel free to check out the **GitHub repository** for further details or code contributions.
 
 ---
 
-### 3.6. 変換を実行
+> **We hope this manual provides a clear and thorough guide.**  
+> **For questions or troubleshooting**, check the built-in help text on each page’s **expander** sections or consult the code on GitHub.  
 
-1. **テキストエリア** にエスペラント文を入力し終えたら、ページ下部のフォーム内にある
-   - **「出力文字形式」（上付き文字 / x形式 / ^形式）**  
-     たとえば「上付き文字」を選べば、エスペラントの ĉ が `c` + 上付きアクセントの形で表示されるよう再変換します。  
-     （`cx` → `ĉ` → `c`＋上付き 等、最終的にどうエスペラント特有文字を表示するかを調節可能）
-   - **「送信」ボタン**  
-     を押します。
-2. ボタンを押すと、内部で
-   - `%...%` や `@...@` の保護・局所置換
-   - 大域的な漢字置換
-   - 2文字語根の追加置換
-   - そして最終的に選択した形式(HTML or 括弧)への整形
-   などの処理が順に行われます。
-
----
-
-### 3.7. 結果のプレビュー・ダウンロード
-
-- 変換が完了すると、画面下部に**「置換結果」**が表示されます。  
-  - テキスト行数が多い場合はプレビューを一部省略している場合があります（例：先頭247行＋末尾3行だけ表示し「...」とするなど）。
-- 出力形式を **HTML** にした場合はタブ形式で「HTMLプレビュー」と「HTMLソースコード」を確認できます。  
-- **「置換結果のダウンロード」** ボタンを押すと、`.html`ファイルなどとしてダウンロードできます。  
-  （場合によっては拡張子`.txt`を指定しても問題ありません。お好みで保存後に拡張子を変えることも可能です。）
-
----
-
-### 3.8. GitHubリポジトリへのリンク
-
-- ページ最下部に **「アプリのGitHubリポジトリ」** というリンクがあり、クリックするとGitHub上のソースコードページに移動できます。  
-- このアプリ全体のコードを参照したり、細部の実装を確認したい場合に活用してください。
-
----
-
-## 4. サブページの使い方 (置換用JSONファイルの生成)
-
-次に、Streamlit特有の「pages」フォルダに配置されている**サブページ**（`エスペラント文(漢字)置換用のJSONファイル生成ページ.py`）についてです。ページのタイトルは「エスペラント文の(漢字)置換に用いるJSONファイルを生成する」。ここでは、大量のエスペラント語根と漢字・日本語訳などを対応づけた「置換用JSONファイル」を自前で作りたい場合に利用します。
-
----
-
-### 4.1. 画面冒頭の概要説明
-
-- サブページを開くと、まず **「使い方の説明を開く」** という折り畳みがあり、以下のような流れで使用することを推奨しています。
-  1. 必要な **CSVファイル**（エスペラント語根→日本語訳/漢字 などの対応表）をアップロードするか、デフォルトを使用する
-  2. 必要に応じて **JSONファイル**（語根分解ルールや置換後文字列などカスタム設定）をアップロードするか、デフォルトを使用する
-  3. 出力形式を選択（「HTML形式」「括弧形式」「替换後文字列のみ」等）
-  4. 最終的に生成された **置換用JSONファイル**をダウンロードして、メインページで使う
-
----
-
-### 4.2. サンプルファイル(各種CSV, JSON, Excel)のダウンロード
-
-- 「サンプルファイル一覧(ダウンロード用)」という折り畳みを開くと、多数のサンプルファイルがリストアップされています。  
-  - **サンプルCSV1：エスペラント語根-日本語訳ルビ対応リスト**  
-  - **サンプルCSV2：エスペラント語根-漢字対応リスト(Mingeo氏案)**  
-  - **サンプルJSON1：エスペラント単語語根分解法ユーザー設定**  
-  - **サンプルJSON2：置換後文字列のユーザー設定**（あまり推奨されない設定も含む例）  
-  - **サンプルExcel：エスペラント語根-日本語訳ルビ対応リスト(習得レベル付き)**  
-- 各ボタンを押すとそのままファイルをダウンロード可能です。  
-  例：「エスペラント語根-日本語訳ルビ対応リスト.csv」をダウンロードし、中身をExcelなどで開いてみると、`Esperant, エスペラント` のような対応が記録されています。
-
----
-
-### 4.3. 出力形式(“HTML形式”や“括弧形式”など)の指定
-
-- 画面中ほどに**「出力形式を選択」**するプルダウン（セレクトボックス）があります。
-- **「HTML格式_Ruby文字_大小调整」** などを選択すると、語根にルビを付けるHTML形式を事前に作ってくれます。（メインページで同じ形式を選択する想定）
-- **「括弧(号)格式」** や **「替换后文字列のみ(仅)保留(简单替换)」** など、好みのスタイルに合わせて出力テキスト形式を整えたJSONルールを作成できます。
-
----
-
-### 4.4. CSVファイルをアップロードまたはデフォルト使用
-
-- **「ステップ１: CSVファイルを準備」** の項目
-  - ここでエスペラント語根と日本語訳/漢字等を対応づけたCSVを指定します。
-  - 「アップロードする」か「デフォルトを使用する」かの選択肢があります。  
-- CSVをアップロードした場合は内部で `convert_to_circumflex(...)` などが走り、x表記などが字上符形式に統一されます。
-- デフォルトを使用する場合は、サンプルとして用意した `./Appの运行に使用する各类文件/エスペラント語根-日本語訳ルビ対応リスト.csv` を読み込みます。
-
----
-
-### 4.5. JSONファイル（語根分解法や置換後文字列設定）をアップロードまたはデフォルト使用
-
-- **「ステップ2: JSONファイル(語根分解法など)を準備」**  
-  1. 「エスペラント単語の語根分解法を追加指定するJSONファイル」  
-  2. 「置換後文字列を追加指定するJSONファイル」  
-  の2種類をここでアップロード可能です。  
-- もし**独自に用意した語根分解ルール**や**特殊な形での置換（例: 特定の単語だけ特別な漢字にしたい）**を反映させたい場合は、それぞれをJSONファイルに書いてアップロードします。  
-- 特にこだわりがなければ「デフォルトを使用する」だけでも多くの語根をカバーできます。
-
----
-
-### 4.6. 高度な設定（並列処理）
-
-- **「ステップ3: 高度な設定 (並列処理)」**  
-  こちらもメインページ同様、複数プロセスを使って大規模なデータを素早く処理するための設定です。  
-- `num_processes` を **2～6** のあいだで指定できます。  
-- 大量の語根データ（約4万4千行など）を扱う場合は大幅に時間短縮が見込まれますが、環境によってはCPU負荷が高まることもあるため注意してください。
-
----
-
-### 4.7. 置換用JSONファイルを作成→ダウンロード
-
-1. 「置換用JSONファイルを作成する」ボタンを押すと、大量のステップを経て**最終的なJSON**を生成します。
-   - エスペラント語根→漢字/日本語の対応
-   - 語尾(a, o, e, n など)を自動で付与して優先度を上げるロジック
-   - ユーザーがアップロードしたカスタム設定の反映
-   - 2文字語根専用の扱い など
-2. 作成が完了すると、**「Download 最终的な替换用リスト(列表)(合并3个JSON文件)」** ボタンが現れますので、これを押してローカルにファイルを保存します。
-3. そのファイルはメインページで「JSONファイルをアップロードする」ときに読み込むことで、複雑な独自置換が実現できます。
-
----
-
-## 5. よくある疑問（Q&A）
-
-### A. `%...%`・`@...@` で囲む意味
-
-- **`%...%`**：囲まれた部分は、一切置換しない（スキップする）ための仕組みです。  
-  例：`Mi havas %nombro% da libroj.`  
-  → `%nombro%` 部分だけはそのまま残り、他の部分は置換ルールに従って変換されます。  
-- **`@...@`**：囲まれた部分だけを別の局所置換リストで処理します。  
-  例：`Mi @amas@ vin.`  
-  → `amas` のみ別ルールで置換するといった挙動が可能になります。  
-- これら2種類をうまく使うことで、「ここはあえて原文のまま残す」「ここは特別な置換を当てる」といった微調整ができます。
-
-### B. “並列処理を使う” チェックを入れるべきかどうか
-
-- 一般的に、**文章量が多い場合**に並列処理をオンにすると高速化が期待できます。  
-- ただし、大量のCPUコアが使える環境なら有効ですが、処理ができない/制限される環境（特にクラウド版Streamlitや小規模環境など）ではエラーや速度低下を招くことがあるため、まずはオフのまま試すことをおすすめします。
-
-### C. ダウンロードしたファイル（.json / .csv / .htmlなど）の使い方
-
-- **`.json`ファイル（置換用JSON）**：メインページの「JSONファイルをアップロード」で使います。  
-- **`.csv`ファイル**：サブページで置換用ルールを作りたいときに再度読み込む、あるいはExcelやエディタで編集して新たなエスペラント語根の訳を追加するときに使います。  
-- **`.html`ファイル**：メインページの置換結果ダウンロードなどで得られます。ブラウザで開くと、ルビ表示がされる文章を確認できます。
-
----
-
-## 6. 注意点・トラブルシューティング
-
-1. **テキストの文字コードはUTF-8推奨**  
-   ファイルアップロード時に文字化けの恐れがあるため、UTF-8のテキストをご準備ください。
-
-2. **ファイルが大きすぎる場合のプレビュー省略**  
-   出力が非常に長いと、プレビューが一部だけしか表示されず「...」と省略されます。必要であればダウンロード結果のHTMLファイル等をテキストエディタで開いてください。
-
-3. **環境依存の問題**  
-   Parallel処理（multiprocessing）は一部環境（クラウド等）で制限される場合があります。うまく動作しないときはオフにしてみてください。
-
-4. **ルビがブラウザ依存でずれる場合**  
-   「HTML格式_Ruby文字_大小调整」のように凝ったルビ表示を使うと、ChromeやSafariでは期待通り表示されても、一部ブラウザではルビ文字のサイズが微妙にズレたりします。気になる場合はCSSを微調整するか、よりシンプルな形式（括弧形式など）をご利用ください。
-
-5. **JSONファイルに書式ミスがある場合**  
-   アップロード時にエラーとなる場合があります。JSON構造が正しいかどうか、コンマやカギ括弧などが対応しているか確認してください。
-
----
-
-# おわりに
-
-以上が本アプリ（メインページとサブページ）の詳細な使い方です。  
-
-- **メインページ** で「実際のエスペラント文を一括変換」する  
-- **サブページ** で「自作のCSV/JSONを元に置換用JSONファイルを作り、より豊富な漢字化ルールを準備する」  
-
-という流れでうまく活用してください。本アプリの構成要素や内部ロジックについてさらに踏み込んで学びたい場合は、同梱のモジュール（`esp_text_replacement_module.py`, `esp_replacement_json_make_module.py`）やGitHubリポジトリを参照すると、どのようにルビサイズ調整や並列処理が実装されているかご覧いただけます。
-
-もし操作で詰まった点やバグがあれば、**GitHubリポジトリのIssue**やコメント等で開発者に報告いただけると幸いです。  
-
-本説明書が、GUIユーザーの皆様にとってスムーズな利用の手助けとなれば幸いです。どうぞお役立てください。
+**End of Manual**  
